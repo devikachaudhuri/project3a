@@ -15,6 +15,7 @@
 int imagefd;
 struct ext2_super_block sblock;
 struct ext2_group_desc *gdescriptors;
+int number_of_groups;
 
 int Open(char * pathname, int flags){
   int fd = open(pathname, flags);
@@ -43,14 +44,21 @@ void Inode(){
 }
 
 void freeInode(){
+  int total_blocks = sblock.s_blocks_per_group;
+  for( int i = 0; i < number_of_groups; i++){
+    //TODO: parse the bitmap
+  }
 }
 
 void freeblock(){
+  int total_blocks = sblock.s_blocks_per_group;
+  for( int i = 0; i < number_of_groups; i++){
+    //TODO: parse the bitmap
+  }  
 }
 
-
 void group(){
-  int number_of_groups = 1 + (sblock.s_blocks_count - 1)/sblock.s_blocks_per_group;
+  number_of_groups = 1 + (sblock.s_blocks_count - 1)/sblock.s_blocks_per_group;
   printf("number of groups %d\n", number_of_groups);
 //(totalnumber of blocks -1)/blocks per group
   int block_size = 1024 << sblock.s_log_block_size;
@@ -68,7 +76,6 @@ void group(){
     
     printf("GROUP,%i,%u,%u,%u,%u,%u,%u,%u\n", i,total_blocks, total_inodes, gdescriptors[i].bg_free_blocks_count, gdescriptors[i].bg_free_inodes_count, gdescriptors[i].bg_block_bitmap, gdescriptors[i].bg_inode_bitmap, gdescriptors[i].bg_inode_table);
   }
-
 }
 
 
@@ -85,5 +92,6 @@ int main (int argc, char *argv[]){
   imagefd = Open(argv[1], O_RDONLY);// open the file image
   superblock();
   group();
+  freeblock();
 }
   
