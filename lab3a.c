@@ -59,21 +59,18 @@ void freeblock(){
   //the 9th block is represented by bit 0 (least significant bit) of byte 1.
   
   unsigned char b;
-  unsigned int count = 1;//make sure we dont go over total_blocks
   for( int i = 0; i < number_of_groups; i++){
-    while (count <= total_blocks){
+    for (unsigned int k = 0; k < total_blocks; k ++){
+      //parse the bitmap byte by byte
+      int offset = (block_size * gdescriptors[i].bg_block_bitmap) + k;
+      Pread(imagefd, &b, sizeof(unsigned char), offset);
       for (unsigned int j = 0; j < 8; j++){
-	//parse the bitmap byte by byte
-	int offset = 1024 + block_size + (block_size * i * sblock.s_blocks_per_group) + (block_size * gdescriptors[i].bg_block_bitmap);
-	Pread(imagefd, &b, sizeof(unsigned char), offset);
 	//for every block per group, look at the corresponding bit
 	if ( ((b & ( (unsigned int) 1 << j )) >> j) == 0){//FREE
-	  printf("BFREE,%u\n", count);
+	  printf("BFREE,%u\n", k + j + 1);
 	}
-	count ++;
       }
     }
-    count = 1;//reset count to 1 for each group
   }  
 }
 
