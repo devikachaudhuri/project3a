@@ -16,6 +16,8 @@ int imagefd;
 struct ext2_super_block sblock;
 struct ext2_group_desc *gdescriptors;
 int number_of_groups;
+unsigned int total_blocks;
+unsigned int block_size;
 
 int Open(char * pathname, int flags){
   int fd = open(pathname, flags);
@@ -44,16 +46,34 @@ void Inode(){
 }
 
 void freeInode(){
-  int total_blocks = sblock.s_blocks_per_group;
   for( int i = 0; i < number_of_groups; i++){
     //TODO: parse the bitmap
   }
 }
 
 void freeblock(){
-  int total_blocks = sblock.s_blocks_per_group;
+  //Each bit represents the current state of a block within that block group,
+  //where 1 means "used" and 0 "free/available". The first block of this block
+  //group is represented by bit 0 of byte 0, the second by bit 1 of byte 0.
+  //The 8th block is represented by bit 7 (most significant bit) of byte 0 while
+  //the 9th block is represented by bit 0 (least significant bit) of byte 1.
+  
+  unsigned char b;
+  unsigned int count = 1;//make sure we dont go over total_blocks
   for( int i = 0; i < number_of_groups; i++){
-    //TODO: parse the bitmap
+    while (count <= total_blocks){
+      for (unsigned int j = 0; j < 8; j++){
+	//parse the bitmap byte by byte
+	int offset = 1024 + block_size + (block_size * i * sblock.s_blocks_per_group) + (block_size * gdescriptors[i].bg_block_bitmap);
+	Pread(imagefd, &b, sizeof(unsigned char), offset);
+	//for every block per group, look at the corresponding bit
+	if ( ((b & ( (unsigned int) 1 << j )) >> j) == 0){//FREE
+	  printf("BFREE,%u\n", count);
+	}
+	count ++;
+      }
+    }
+    count = 1;//reset count to 1 for each group
   }  
 }
 
@@ -61,8 +81,7 @@ void group(){
   number_of_groups = 1 + (sblock.s_blocks_count - 1)/sblock.s_blocks_per_group;
   printf("number of groups %d\n", number_of_groups);
 //(totalnumber of blocks -1)/blocks per group
-  int block_size = 1024 << sblock.s_log_block_size;
-  //first group is at the offset 1024 + block_size
+    //first group is at the offset 1024 + block_size
   //second group is at the offset 1024 + block_size + (block_size * blocks_per_group)
   //third group is at the offset 1024 + block_size+ 2(block_size * blockes_per_group)
   gdescriptors = (struct ext2_group_desc*) malloc(number_of_groups * sizeof(struct ext2_group_desc));
@@ -71,7 +90,7 @@ void group(){
     int offset = 1024 + block_size + (block_size * i * sblock.s_blocks_per_group);
     Pread(imagefd, &gdescriptors[0], sizeof(struct ext2_group_desc), offset);
 
-    unsigned int total_blocks = sblock.s_blocks_per_group; //TODO may have more...
+    total_blocks = sblock.s_blocks_per_group; //TODO may have more...
     unsigned int total_inodes = sblock.s_inodes_per_group;
     
     printf("GROUP,%i,%u,%u,%u,%u,%u,%u,%u\n", i,total_blocks, total_inodes, gdescriptors[i].bg_free_blocks_count, gdescriptors[i].bg_free_inodes_count, gdescriptors[i].bg_block_bitmap, gdescriptors[i].bg_inode_bitmap, gdescriptors[i].bg_inode_table);
@@ -82,7 +101,7 @@ void group(){
 void superblock(){
   //The superblock is always located at byte offset 1024 from the beginning of the file, block device or partition formatted with Ext2 and later variants (Ext3, Ext4).
   Pread(imagefd, &sblock, sizeof(struct ext2_super_block), 1024);
-  unsigned int block_size = 1024 << sblock.s_log_block_size;
+  block_size = 1024 << sblock.s_log_block_size;
   printf("SUPERBLOCK,%u,%u,%u,%u,%u,%u,%u\n", sblock.s_blocks_count, sblock.s_inodes_count, block_size, sblock.s_inode_size, sblock.s_blocks_per_group, sblock.s_inodes_per_group, sblock.s_first_ino);  
 }
 
