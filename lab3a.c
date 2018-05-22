@@ -62,7 +62,9 @@ void freeblock(){
   //are in use. Since each bitmap is limited to a single block, this means
   //that the maximum size of a block group is 8 times the size of a block. 
   unsigned char b;
+  
   for(unsigned int i = 0; i < number_of_groups; i++){
+    int offset2 = i * sblock.s_blocks_per_group;
     for (unsigned int k = 0; k < block_size; k ++){
       //parse the bitmap byte by byte
       int offset = (block_size * gdescriptors[i].bg_block_bitmap) + k;
@@ -70,7 +72,7 @@ void freeblock(){
       for (unsigned int j = 0; j < 8; j++){
 	//for every block per group, look at the corresponding bit
 	if ( ((b & ( (unsigned int) 1 << j )) >> j) == 0){//FREE
-	  printf("BFREE,%u\n", k + j + 1);
+	  printf("BFREE,%u\n", (offset2 + (k * 8) + j + 1));
 	}
       }
     }
