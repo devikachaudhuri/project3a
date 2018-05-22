@@ -45,8 +45,23 @@ void Inode(){
 }
 
 void freeInode(){
-  for( unsigned int i = 0; i < number_of_groups; i++){
-    //TODO: parse the bitmap
+  //same as freeblock except +1 block over.
+  
+  unsigned char b;
+
+  for(unsigned int i = 0; i < number_of_groups; i++){
+    int offset2 = (i * sblock.s_blocks_per_group) + 1;
+    for (unsigned int k = 0; k < block_size; k ++){
+      //parse the bitmap byte by byte
+      int offset = (block_size * (gdescriptors[i].bg_block_bitmap + 1)) + k;
+      Pread(imagefd, &b, sizeof(unsigned char), offset);
+      for (unsigned int j = 0; j < 8; j++){
+	//for every block per group, look at the corresponding bit
+	if ( ((b & ( (unsigned int) 1 << j )) >> j) == 0){//FREE
+	  printf("IFREE,%u\n", (offset2 + (k * 8) + j + 1));
+	}
+      }
+    }
   }
 }
 
@@ -123,5 +138,6 @@ int main (int argc, char *argv[]){
   superblock();
   group();
   freeblock();
+  freeInode();
 }
   
