@@ -15,8 +15,7 @@
 int imagefd;
 struct ext2_super_block sblock;
 struct ext2_group_desc *gdescriptors;
-int number_of_groups;
-unsigned int total_blocks;
+unsigned int number_of_groups;
 unsigned int block_size;
 
 int Open(char * pathname, int flags){
@@ -46,7 +45,7 @@ void Inode(){
 }
 
 void freeInode(){
-  for( int i = 0; i < number_of_groups; i++){
+  for( unsigned int i = 0; i < number_of_groups; i++){
     //TODO: parse the bitmap
   }
 }
@@ -57,10 +56,14 @@ void freeblock(){
   //group is represented by bit 0 of byte 0, the second by bit 1 of byte 0.
   //The 8th block is represented by bit 7 (most significant bit) of byte 0 while
   //the 9th block is represented by bit 0 (least significant bit) of byte 1.
-  
+
+  //Two blocks near the start of each group are reserved for the block usage
+  // bitmap and the inode usage bitmap which show which blocks and inodes
+  //are in use. Since each bitmap is limited to a single block, this means
+  //that the maximum size of a block group is 8 times the size of a block. 
   unsigned char b;
-  for( int i = 0; i < number_of_groups; i++){
-    for (unsigned int k = 0; k < total_blocks; k ++){
+  for(unsigned int i = 0; i < number_of_groups; i++){
+    for (unsigned int k = 0; k < block_size; k ++){
       //parse the bitmap byte by byte
       int offset = (block_size * gdescriptors[i].bg_block_bitmap) + k;
       Pread(imagefd, &b, sizeof(unsigned char), offset);
@@ -77,20 +80,29 @@ void freeblock(){
 void group(){
   number_of_groups = 1 + (sblock.s_blocks_count - 1)/sblock.s_blocks_per_group;
   printf("number of groups %d\n", number_of_groups);
-//(totalnumber of blocks -1)/blocks per group
-    //first group is at the offset 1024 + block_size
+  //(totalnumber of blocks -1)/blocks per group
+  //first group is at the offset 1024 + block_size
   //second group is at the offset 1024 + block_size + (block_size * blocks_per_group)
   //third group is at the offset 1024 + block_size+ 2(block_size * blockes_per_group)
   gdescriptors = (struct ext2_group_desc*) malloc(number_of_groups * sizeof(struct ext2_group_desc));
-  
-  for (int i = 0; i< number_of_groups; i++){
+
+
+  unsigned int total_left = sblock.s_blocks_count;
+  unsigned int blocks_per_group = sblock.s_blocks_per_group;
+  unsigned int total_blocks;
+  for (unsigned int i = 0; i< number_of_groups; i++){
     int offset = 1024 + block_size + (block_size * i * sblock.s_blocks_per_group);
     Pread(imagefd, &gdescriptors[0], sizeof(struct ext2_group_desc), offset);
+    if (total_left < blocks_per_group){
+      total_blocks = total_left;
+    }
+    else
+      total_blocks = sblock.s_blocks_per_group;
 
-    total_blocks = sblock.s_blocks_per_group; //TODO may have more...
     unsigned int total_inodes = sblock.s_inodes_per_group;
     
     printf("GROUP,%i,%u,%u,%u,%u,%u,%u,%u\n", i,total_blocks, total_inodes, gdescriptors[i].bg_free_blocks_count, gdescriptors[i].bg_free_inodes_count, gdescriptors[i].bg_block_bitmap, gdescriptors[i].bg_inode_bitmap, gdescriptors[i].bg_inode_table);
+    total_left = total_left - total_blocks;
   }
 }
 
