@@ -43,24 +43,44 @@ void directory (){
 }
 
 void Inode(){
+  //There is one inode table per block group and it can be located by
+  //reading the bg_inode_table in its associated group descriptor. There are
+  //s_inodes_per_group inodes per table. 
   struct ext2_inode inodes;
   char type_of_file = '?';
   for(unsigned int j = 0; j < number_of_groups; j++){
     //root directory inode is #2;
     for(unsigned int k = 2; k < sblock.s_inodes_count;k ++ ){//total number of inodes, used and free
-      for(int i = 0; i< block_size; i++){
+      int allocated = 1;
+      //check if actually allocated
+      for(unsigned int i = 0; i< block_size; i++){
 	unsigned char bitmap  = Inode_bitmap[(block_size * j) + i];
-	
-    /*if (inodes[j].i_mode & EXT2_S_IFLNK)
-      type_of_file = 's';
-    else if (inodes[j].i_mode & EXT2_S_IFDIR)
-      type_of_file = 'd';
-    else if (inodes[j].i_mode & EXT2_S_IFREG)
-    type_of_file = 'f';*/
-    printf("INODE,%u,%c,%o,%u,%u,%u ,%u,%u\n", j+2, type_of_file, inodes.i_mode, inodes.i_uid, inodes.i_gid, inodes.i_links_count, inodes.i_size, inodes.i_blocks);
+	for(unsigned int bit = 0; bit < 8; bit ++){
+	  unsigned int inode_num = j * sblock.s_inodes_per_group + i*8 +bit +1;
+	  if (k == inode_num){
+	    if ( ((bitmap & ( (unsigned int) 1 << bit )) >> bit) == 0){//FREE
+	      allocated = 0;
+	    }
+	  }
+	}
+      }
+      if(allocated == 0){
+	continue;
+      }
+      int block = gdescriptors[j].bg_inode_table + (k -1)*(sizeof(struct ext2_inode));
+      int inode_offset = 1024 + (block - 1) * block_size;
+      Pread(imagefd, &inodes, sizeof(struct ext2_inode), inode_offset);
+      /*if (inodes[j].i_mode & EXT2_S_IFLNK)
+	type_of_file = 's';
+	else if (inodes[j].i_mode & EXT2_S_IFDIR)
+	type_of_file = 'd';
+	else if (inodes[j].i_mode & EXT2_S_IFREG)
+	type_of_file = 'f';*/
+      printf("INODE,%u,%c,%o,%u,%u,%u ,%u,%u\n", k, type_of_file, inodes.i_mode, inodes.i_uid, inodes.i_gid, inodes.i_links_count, inodes.i_size, inodes.i_blocks);
+    }
   }
-		  
 }
+
 
 void freeInode(){
   //same as freeblock except +1 block over.
@@ -68,10 +88,10 @@ void freeInode(){
   unsigned char b;
   Inode_bitmap = malloc(number_of_groups * block_size * sizeof(unsigned char));//for Inodes();
   for(unsigned int i = 0; i < number_of_groups; i++){
-    int offset2 = (i * sblock.s_blocks_per_group) + 1;
+    int offset2 = (i * sblock.s_inodes_per_group);
     for (unsigned int k = 0; k < block_size; k ++){
       //parse the bitmap byte by byte
-      int offset = (block_size * (gdescriptors[i].bg_block_bitmap + 1)) + k;
+      int offset = (block_size * (gdescriptors[i].bg_block_bitmap +1)) + k;
       Pread(imagefd, &b, sizeof(unsigned char), offset);
       Inode_bitmap[(block_size*i) + k] = b;//stored in 2D array of [group][#byte], so the third byte of group 2 would be [block_size*1 + 2]
       for (unsigned int j = 0; j < 8; j++){
