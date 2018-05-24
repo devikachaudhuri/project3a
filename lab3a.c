@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include "ext2_fs.h"
 #include <stdlib.h>
+#include <time.h>
 
 int imagefd;
 struct ext2_super_block sblock;
@@ -35,6 +36,10 @@ ssize_t Pread(int fd, void *buf, size_t count, off_t offset){
   return p;
 }
 
+int block_offset(int block){
+  return (1024 + ((block-1)*block_size));
+}
+
 
 void indirectblocks(){
 }
@@ -43,40 +48,66 @@ void directory (){
 }
 
 void Inode(){
-  //There is one inode table per block group and it can be located by
-  //reading the bg_inode_table in its associated group descriptor. There are
-  //s_inodes_per_group inodes per table. 
   struct ext2_inode inodes;
   char type_of_file = '?';
-  for(unsigned int j = 0; j < number_of_groups; j++){
-    //root directory inode is #2;
-    for(unsigned int k = 2; k < sblock.s_inodes_count;k ++ ){//total number of inodes, used and free
+  for (unsigned int j = 0; j < number_of_groups; j++) {
+    for (unsigned int k = 2; k < sblock.s_inodes_count; k++) {
       int allocated = 1;
-      //check if actually allocated
-      for(unsigned int i = 0; i< block_size; i++){
-	unsigned char bitmap  = Inode_bitmap[(block_size * j) + i];
-	for(unsigned int bit = 0; bit < 8; bit ++){
-	  unsigned int inode_num = j * sblock.s_inodes_per_group + i*8 +bit +1;
+      for (unsigned int i = 0 ; i < block_size; i++) {
+	unsigned char bitmap = Inode_bitmap[(block_size *j) + i];
+	for (int bit = 0; bit < 8; bit++) {
+	  unsigned int inode_num = j * sblock.s_inodes_per_group + i * 8 + bit + 1;
 	  if (k == inode_num){
-	    if ( ((bitmap & ( (unsigned int) 1 << bit )) >> bit) == 0){//FREE
+	    if (((bitmap & ( (unsigned int) 1 << bit )) >> bit) == 0){//FREE
 	      allocated = 0;
 	    }
+	    break;
 	  }
 	}
       }
-      if(allocated == 0){
+      if (allocated == 0){
 	continue;
       }
-      int block = gdescriptors[j].bg_inode_table + (k -1)*(sizeof(struct ext2_inode));
-      int inode_offset = 1024 + (block - 1) * block_size;
-      Pread(imagefd, &inodes, sizeof(struct ext2_inode), inode_offset);
-      /*if (inodes[j].i_mode & EXT2_S_IFLNK)
+      int block = (gdescriptors[j].bg_inode_table);
+      int offset = block_offset(block) + (k-1) * sizeof(struct ext2_inode);//add inode table offset to inode offset
+      //      printf("%d\n", offset);
+      Pread(imagefd, &inodes, sizeof(struct ext2_inode), offset);
+     
+      if (inodes.i_mode & 0xA000){
 	type_of_file = 's';
-	else if (inodes[j].i_mode & EXT2_S_IFDIR)
+      }
+      else if (inodes.i_mode & 0x8000){
+	type_of_file = 'f';
+      }
+      else if (inodes.i_mode & 0x4000){
 	type_of_file = 'd';
-	else if (inodes[j].i_mode & EXT2_S_IFREG)
-	type_of_file = 'f';*/
-      printf("INODE,%u,%c,%o,%u,%u,%u ,%u,%u\n", k, type_of_file, inodes.i_mode, inodes.i_uid, inodes.i_gid, inodes.i_links_count, inodes.i_size, inodes.i_blocks);
+      }
+
+      char ctime[80];
+      time_t rawtime = inodes.i_ctime;
+      struct tm *info = gmtime(&rawtime);
+      strftime(ctime, 80, "%x %X", info);
+      
+      char mtime[80];
+      time_t rawtime1 = inodes.i_mtime;
+      struct tm *info1 = gmtime(&rawtime1);
+      strftime(mtime, 80, "%x %X", info1);
+
+      char atime[80];
+      time_t rawtime2 = inodes.i_atime;
+      struct tm *info2 = gmtime(&rawtime2);
+      strftime(atime, 80, "%x %X", info2);  
+
+      printf("INODE,%d,%c,%u,%u,%u,%u,%s,%s,%s,%u,%u",k,type_of_file,inodes.i_mode,inodes.i_uid,inodes.i_gid,inodes.i_links_count,ctime, mtime, atime, inodes.i_size,inodes.i_blocks);
+
+      for (int k = 0; k < EXT2_N_BLOCKS; k++) {
+	printf(",%u", inodes.i_block[k]);
+      }
+      printf("\n");
+
+      if (k == 2) {
+	k = sblock.s_first_ino - 1;
+      }
     }
   }
 }
