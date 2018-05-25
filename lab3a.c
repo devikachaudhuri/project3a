@@ -53,37 +53,38 @@ void indirectblocks(){
 void directory (struct ext2_inode* dir_inode, unsigned int dir_inode_num){
   unsigned int offset_tot = 0;
   unsigned int block_index = 0;
-  unsigned int next_inode_num;
+  unsigned int next_name_len;
   unsigned int block_ptr = dir_inode->i_block[block_index];
-  struct ext2_dir_entry* current_dir_entry;
+  struct ext2_dir_entry current_dir_entry;
+
+  // Grab the first entry
+  Pread(imagefd, &current_dir_entry, sizeof(struct ext2_dir_entry), 
+	(block_offset(block_ptr) + offset_tot));
 
   // Loop through all entries in the directory (until a entry with inode number 0)
   do {
-    // Grab the current entry
-    current_dir_entry = (struct ext2_dir_entry*) 
-      ((intptr_t) (block_offset(block_ptr) + offset_tot));
-		   //(k-1) * sizeof(struct ext2_dir_entry)));
-    /////// TODO: Addressing is probably wrong
-        
     // Print the log entry
     printf("DIRENT,%u,%d,%u,%u,%u,\'%s\'\n",
 	   dir_inode_num,
 	   offset_tot,
-	   current_dir_entry->inode,
-	   current_dir_entry->rec_len,
-	   current_dir_entry->name_len,
-	   current_dir_entry->name);
+	   current_dir_entry.inode,
+	   current_dir_entry.rec_len,
+	   current_dir_entry.name_len,
+	   current_dir_entry.name);
 
     // Setup for the next entry
-    offset_tot += current_dir_entry->rec_len;
+    offset_tot += current_dir_entry.rec_len;
     if (offset_tot >= block_size){
       // If this block is used up, go to the next one
       block_index++;
-      block_ptr = dir_inode->i_block[block_index]; //////// TODO: Addressing is probably wrong
+      block_ptr = dir_inode->i_block[block_index];
     }
-    // Check the next inode number to see if it is valid
-    next_inode_num = ((struct ext2_dir_entry*) (intptr_t) block_ptr)->inode;
-  } while (next_inode_num > 0);
+
+    // Grab the next entry
+    Pread(imagefd, &current_dir_entry, sizeof(struct ext2_dir_entry), 
+	  (block_offset(block_ptr) + offset_tot));
+    next_name_len = current_dir_entry.name_len;
+  } while (next_name_len > 0);
 }
 
 void Inode(){
@@ -156,7 +157,7 @@ void Inode(){
 	     inodes.i_blocks);
 
       for (int k = 0; k < EXT2_N_BLOCKS; k++) {
-	printf(",%u", inodes.i_block[k]);
+      	printf(",%u", inodes.i_block[k]);
       }
       printf("\n");
 
