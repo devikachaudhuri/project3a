@@ -13,6 +13,10 @@
 #include <stdlib.h>
 #include <time.h>
 
+#define EXIT_SUC 0
+#define EXIT_ERR_ARG 1
+#define EXIT_ERR_MISC 2
+
 int imagefd;
 struct ext2_super_block sblock;
 struct ext2_group_desc *gdescriptors;
@@ -23,7 +27,8 @@ unsigned int block_size;
 int Open(char * pathname, int flags){
   int fd = open(pathname, flags);
   if (fd == -1){
-    fprintf(stderr, "Open error:%s\n", strerror(errno));
+    fprintf(stderr, "Open error: %s\n", strerror(errno));
+    exit(EXIT_ERR_ARG);
   }
   return fd;
 }
@@ -31,7 +36,8 @@ int Open(char * pathname, int flags){
 ssize_t Pread(int fd, void *buf, size_t count, off_t offset){
   ssize_t p = pread(fd, buf, count, offset);
   if (p == -1){
-    fprintf(stderr, "pread error:%s\n", strerror(errno));
+    fprintf(stderr, "pread error: %s\n", strerror(errno));
+    exit(EXIT_ERR_MISC);
   }
   return p;
 }
@@ -44,12 +50,47 @@ int block_offset(int block){
 void indirectblocks(){
 }
 
-void directory (){
+void directory (struct ext2_inode* dir_inode, unsigned int dir_inode_num){
+  unsigned int offset_tot = 0;
+  unsigned int block_index = 0;
+  unsigned int next_inode_num;
+  unsigned int block_ptr = dir_inode->i_block[block_index];
+  struct ext2_dir_entry* current_dir_entry;
+
+  // Loop through all entries in the directory (until a entry with inode number 0)
+  do {
+    // Grab the current entry
+    current_dir_entry = (struct ext2_dir_entry*) 
+      ((intptr_t) (block_offset(block_ptr) + offset_tot));
+		   //(k-1) * sizeof(struct ext2_dir_entry)));
+    /////// TODO: Addressing is probably wrong
+        
+    // Print the log entry
+    printf("DIRENT,%u,%d,%u,%u,%u,\'%s\'\n",
+	   dir_inode_num,
+	   offset_tot,
+	   current_dir_entry->inode,
+	   current_dir_entry->rec_len,
+	   current_dir_entry->name_len,
+	   current_dir_entry->name);
+
+    // Setup for the next entry
+    offset_tot += current_dir_entry->rec_len;
+    if (offset_tot >= block_size){
+      // If this block is used up, go to the next one
+      block_index++;
+      block_ptr = dir_inode->i_block[block_index]; //////// TODO: Addressing is probably wrong
+    }
+    // Check the next inode number to see if it is valid
+    next_inode_num = ((struct ext2_dir_entry*) (intptr_t) block_ptr)->inode;
+  } while (next_inode_num > 0);
 }
 
 void Inode(){
   struct ext2_inode inodes;
   char type_of_file = '?';
+  int run_dir = 0;
+  unsigned int dir_par_inode_num;
   for (unsigned int j = 0; j < number_of_groups; j++) {
     for (unsigned int k = 2; k < sblock.s_inodes_count; k++) {
       int allocated = 1;
@@ -81,6 +122,8 @@ void Inode(){
       }
       else if (inodes.i_mode & 0x4000){
 	type_of_file = 'd';
+	// Run the directory function too
+	run_dir = 1;
       }
 
       char ctime[80];
@@ -98,7 +141,19 @@ void Inode(){
       struct tm *info2 = gmtime(&rawtime2);
       strftime(atime, 80, "%x %X", info2);  
 
-      printf("INODE,%d,%c,%u,%u,%u,%u,%s,%s,%s,%u,%u",k,type_of_file,inodes.i_mode,inodes.i_uid,inodes.i_gid,inodes.i_links_count,ctime, mtime, atime, inodes.i_size,inodes.i_blocks);
+      dir_par_inode_num = k;
+      printf("INODE,%d,%c,%o,%u,%u,%u,%s,%s,%s,%u,%u",
+	     k,
+	     type_of_file,
+	     (inodes.i_mode & 0x0fff),
+	     inodes.i_uid,
+	     inodes.i_gid,
+	     inodes.i_links_count,
+	     ctime, 
+	     mtime, 
+	     atime, 
+	     inodes.i_size,
+	     inodes.i_blocks);
 
       for (int k = 0; k < EXT2_N_BLOCKS; k++) {
 	printf(",%u", inodes.i_block[k]);
@@ -108,6 +163,12 @@ void Inode(){
       if (k == 2) {
 	k = sblock.s_first_ino - 1;
       }
+
+      if (run_dir) {
+	// If indicated, run the directory function
+	directory(&inodes, dir_par_inode_num);
+	run_dir = 0;
+      } 
     }
   }
 }
@@ -188,7 +249,15 @@ void group(){
 
     unsigned int total_inodes = sblock.s_inodes_per_group;
     
-    printf("GROUP,%i,%u,%u,%u,%u,%u,%u,%u\n", i,total_blocks, total_inodes, gdescriptors[i].bg_free_blocks_count, gdescriptors[i].bg_free_inodes_count, gdescriptors[i].bg_block_bitmap, gdescriptors[i].bg_inode_bitmap, gdescriptors[i].bg_inode_table);
+    printf("GROUP,%i,%u,%u,%u,%u,%u,%u,%u\n", 
+	   i,
+	   total_blocks, 
+	   total_inodes, 
+	   gdescriptors[i].bg_free_blocks_count, 
+	   gdescriptors[i].bg_free_inodes_count, 
+	   gdescriptors[i].bg_block_bitmap, 
+	   gdescriptors[i].bg_inode_bitmap, 
+	   gdescriptors[i].bg_inode_table);
     total_left = total_left - total_blocks;
   }
 }
@@ -204,6 +273,10 @@ void superblock(){
 
 int main (int argc, char *argv[]){
   //argv is the name of the image.
+  if(argc < 2){
+    fprintf(stderr, "Error: No file system image provided!\n");
+    exit(EXIT_ERR_ARG);
+  }
   imagefd = Open(argv[1], O_RDONLY);// open the file image
   superblock();
   group();
