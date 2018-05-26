@@ -93,87 +93,79 @@ void Inode(){
   int run_dir = 0;
   unsigned int dir_par_inode_num;
   for (unsigned int j = 0; j < number_of_groups; j++) {
-    for (unsigned int k = 2; k < sblock.s_inodes_count; k++) {
-      int allocated = 1;
-      for (unsigned int i = 0 ; i < block_size; i++) {
-	unsigned char bitmap = Inode_bitmap[(block_size *j) + i];
-	for (int bit = 0; bit < 8; bit++) {
-	  unsigned int inode_num = j * sblock.s_inodes_per_group + i * 8 + bit + 1;
-	  if (k == inode_num){
-	    if (((bitmap & ( (unsigned int) 1 << bit )) >> bit) == 0){//FREE
-	      allocated = 0;
-	    }
-	    break;
-	  }
-	}
-      }
-      if (allocated == 0){
-	continue;
-      }
+    for (unsigned int k = 2; k < sblock.s_inodes_count; k++) {      
       int block = (gdescriptors[j].bg_inode_table);
       int offset = block_offset(block) + (k-1) * sizeof(struct ext2_inode);//add inode table offset to inode offset
       //      printf("%d\n", offset);
       Pread(imagefd, &inodes, sizeof(struct ext2_inode), offset);
-     
-      if (inodes.i_mode & 0xA000){
-	type_of_file = 's';
+      if (inodes.i_mode != 0 && inodes.i_links_count != 0){
+	  
+	if (S_ISREG(inodes.i_mode)){
+	    type_of_file = 'f';
+	  }
+	if (S_ISLNK(inodes.i_mode)){
+	  type_of_file = 's';
+	}
+	else if (S_ISDIR(inodes.i_mode)){
+	  type_of_file = 'd';
+	  // Run the directory function too
+	  run_dir = 1;
+	}
+	
+	char ctime[80];
+	time_t rawtime = inodes.i_ctime;
+	struct tm *info = gmtime(&rawtime);
+	strftime(ctime, 80, "%x %X", info);
+	  
+	char mtime[80];
+	time_t rawtime1 = inodes.i_mtime;
+	struct tm *info1 = gmtime(&rawtime1);
+	strftime(mtime, 80, "%x %X", info1);
+	
+	char atime[80];
+	time_t rawtime2 = inodes.i_atime;
+	struct tm *info2 = gmtime(&rawtime2);
+	strftime(atime, 80, "%x %X", info2);  
+	
+	dir_par_inode_num = k;
+	printf("INODE,%d,%c,%o,%u,%u,%u,%s,%s,%s,%u,%u",
+	       k,
+	       type_of_file,
+	       (inodes.i_mode & 0x0fff),
+	       inodes.i_uid,
+	       inodes.i_gid,
+	       inodes.i_links_count,
+	       ctime, 
+	       mtime, 
+	       atime, 
+	       inodes.i_size,
+	       inodes.i_blocks);
+	if (type_of_file != 's' || (type_of_file == 's' && inodes.i_size > 60)){
+	  for (int k = 0; k < EXT2_N_BLOCKS; k++){
+	    printf(",%u", inodes.i_block[k]);
+	  }
+	}
+	else{
+	  printf(",%u", inodes.i_block[0]);
+	}
+	printf("\n");
+	
+	if (k == 2) {
+	  k = sblock.s_first_ino - 1;
+	}
+	
+	if (run_dir) {
+	  // If indicated, run the directory function
+	  //	    directory(&inodes, dir_par_inode_num);
+	  run_dir = 0;
+	}
       }
-      else if (inodes.i_mode & 0x8000){
-	type_of_file = 'f';
-      }
-      else if (inodes.i_mode & 0x4000){
-	type_of_file = 'd';
-	// Run the directory function too
-	run_dir = 1;
-      }
-
-      char ctime[80];
-      time_t rawtime = inodes.i_ctime;
-      struct tm *info = gmtime(&rawtime);
-      strftime(ctime, 80, "%x %X", info);
-      
-      char mtime[80];
-      time_t rawtime1 = inodes.i_mtime;
-      struct tm *info1 = gmtime(&rawtime1);
-      strftime(mtime, 80, "%x %X", info1);
-
-      char atime[80];
-      time_t rawtime2 = inodes.i_atime;
-      struct tm *info2 = gmtime(&rawtime2);
-      strftime(atime, 80, "%x %X", info2);  
-
-      dir_par_inode_num = k;
-      printf("INODE,%d,%c,%o,%u,%u,%u,%s,%s,%s,%u,%u",
-	     k,
-	     type_of_file,
-	     (inodes.i_mode & 0x0fff),
-	     inodes.i_uid,
-	     inodes.i_gid,
-	     inodes.i_links_count,
-	     ctime, 
-	     mtime, 
-	     atime, 
-	     inodes.i_size,
-	     inodes.i_blocks);
-
-      for (int k = 0; k < EXT2_N_BLOCKS; k++) {
-      	printf(",%u", inodes.i_block[k]);
-      }
-      printf("\n");
-
-      if (k == 2) {
-	k = sblock.s_first_ino - 1;
-      }
-
-      if (run_dir) {
-	// If indicated, run the directory function
-	directory(&inodes, dir_par_inode_num);
-	run_dir = 0;
-      } 
     }
   }
 }
 
+	
+    
 
 void freeInode(){
   //same as freeblock except +1 block over.
