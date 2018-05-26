@@ -23,6 +23,7 @@ struct ext2_group_desc *gdescriptors;
 unsigned char *Inode_bitmap;
 unsigned int number_of_groups;
 unsigned int block_size;
+const unsigned int NUM_PTRS = EXT2_MIN_BLOCK_SIZE/sizeof(__u32);
 
 int Open(char * pathname, int flags){
   int fd = open(pathname, flags);
@@ -50,41 +51,125 @@ int block_offset(int block){
 void indirectblocks(){
 }
 
-void directory (struct ext2_inode* dir_inode, unsigned int dir_inode_num){
-  unsigned int offset_tot = 0;
-  unsigned int block_index = 0;
-  unsigned int next_name_len;
-  unsigned int block_ptr = dir_inode->i_block[block_index];
+void directory_block (unsigned int dir_inode_num, unsigned int block_ptr){
+  unsigned int offset_tot = 0; // Running counter of the offset
   struct ext2_dir_entry current_dir_entry;
 
-  // Grab the first entry
-  Pread(imagefd, &current_dir_entry, sizeof(struct ext2_dir_entry), 
-	(block_offset(block_ptr) + offset_tot));
+  // Null pointer check
+  if (block_ptr == 0) return;  
 
-  // Loop through all entries in the directory (until a entry with inode number 0)
-  do {
-    // Print the log entry
-    printf("DIRENT,%u,%d,%u,%u,%u,\'%s\'\n",
-	   dir_inode_num,
-	   offset_tot,
-	   current_dir_entry.inode,
-	   current_dir_entry.rec_len,
-	   current_dir_entry.name_len,
-	   current_dir_entry.name);
-
-    // Setup for the next entry
-    offset_tot += current_dir_entry.rec_len;
-    if (offset_tot >= block_size){
-      // If this block is used up, go to the next one
-      block_index++;
-      block_ptr = dir_inode->i_block[block_index];
-    }
-
+  // Loop within each block (direct pointer) to each entry
+  while (offset_tot < block_size){
     // Grab the next entry
     Pread(imagefd, &current_dir_entry, sizeof(struct ext2_dir_entry), 
 	  (block_offset(block_ptr) + offset_tot));
-    next_name_len = current_dir_entry.name_len;
-  } while (next_name_len > 0);
+
+    if (current_dir_entry.inode != 0){
+      // Print the log entry
+      printf("DIRENT,%u,%d,%u,%u,%u,\'%.*s\'\n",
+	     dir_inode_num,
+	     offset_tot,
+	     current_dir_entry.inode,
+	     current_dir_entry.rec_len,
+	     current_dir_entry.name_len,
+	     current_dir_entry.name_len,
+	     current_dir_entry.name);
+    }
+
+    // Setup for the next entry
+    offset_tot += current_dir_entry.rec_len;
+  }
+}
+
+void directory_ind_block (unsigned int dir_inode_num, unsigned int block_ind_ptr,
+			  int ind_lvl){
+  unsigned int block_ptr_lvl1_index;
+  unsigned int block_ptr_lvl1;
+  
+  // Null pointer check
+  if (block_ind_ptr == 0) return;
+
+  // Look through each pointer in the indirect block
+  for (block_ptr_lvl1_index = 0; block_ptr_lvl1_index < NUM_PTRS; block_ptr_lvl1_index++){
+    // Determine the next block pointer
+    block_ptr_lvl1 = block_ind_ptr + (sizeof(__u32) * block_ptr_lvl1_index);
+    // Scan the block
+    if (ind_lvl > 1)
+      directory_ind_block(dir_inode_num, block_ptr_lvl1, ind_lvl - 1);
+    else
+      directory_block(dir_inode_num, block_ptr_lvl1);
+  }  
+}
+
+void directory_dind_block (unsigned int dir_inode_num, unsigned int block_dind_ptr){
+  unsigned int block_ptr_lvl2_index;
+  unsigned int block_ptr_lvl2;
+  
+  // Null pointer check
+  if (block_dind_ptr == 0) return;
+
+  // Look through each pointer in the indirect block
+  for (block_ptr_lvl2_index = 0; block_ptr_lvl2_index < NUM_PTRS; block_ptr_lvl2_index++){
+    // Determine the next block pointer
+    block_ptr_lvl2 = block_dind_ptr + (sizeof(__u32) * block_ptr_lvl2_index);
+    // Scan the block
+    directory_ind_block(dir_inode_num, block_ptr_lvl2, 1);
+  }  
+}
+
+void directory_tind_block (unsigned int dir_inode_num, unsigned int block_tind_ptr){
+  unsigned int block_ptr_lvl3_index;
+  unsigned int block_ptr_lvl3;
+  
+  // Null pointer check
+  if (block_tind_ptr == 0) return;
+
+  // Look through each pointer in the indirect block
+  for (block_ptr_lvl3_index = 0; block_ptr_lvl3_index < NUM_PTRS; block_ptr_lvl3_index++){
+    // Determine the next block pointer
+    block_ptr_lvl3 = block_tind_ptr + (sizeof(__u32) * block_ptr_lvl3_index);
+    // Scan the block
+    directory_dind_block(dir_inode_num, block_ptr_lvl3);
+  }  
+}
+
+void directory (struct ext2_inode* dir_inode, unsigned int dir_inode_num){
+  unsigned int block_index;
+  unsigned int block_ptr;
+
+  // Loop through all direct block pointers
+  for (block_index = 0; block_index < EXT2_IND_BLOCK; block_index++){
+    // Find the next block
+    block_ptr = dir_inode->i_block[block_index];
+    // Scan the block
+    directory_block(dir_inode_num, block_ptr);
+  }
+  
+  // Loop through all single indirect pointers
+  for (; block_index <= EXT2_DIND_BLOCK; block_index++){
+    // Grab the next indirect block
+    block_ptr = dir_inode->i_block[block_index];
+    // Scan the block
+    directory_ind_block(dir_inode_num, block_ptr, 1);
+  }
+
+  // Loop through all double indirect pointers
+  for (; block_index < EXT2_TIND_BLOCK; block_index++){
+    // Grab the next indirect block
+    block_ptr = dir_inode->i_block[block_index];
+    // Scan the block
+    //directory_dind_block(dir_inode_num, block_ptr); ////// TEST
+    directory_ind_block(dir_inode_num, block_ptr, 2);
+  }
+
+  // Loop through all triple indirect pointers
+  for (; block_index < EXT2_N_BLOCKS; block_index++){
+    // Grab the next indirect block
+    block_ptr = dir_inode->i_block[block_index];
+    // Scan the block
+    //directory_tind_block(dir_inode_num, block_ptr); ////// TEST
+    directory_ind_block(dir_inode_num, block_ptr, 3);
+  }
 }
 
 void Inode(){
