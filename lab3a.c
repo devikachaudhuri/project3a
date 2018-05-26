@@ -85,10 +85,11 @@ void directory_ind_block (unsigned int dir_inode_num, unsigned int block_ind_ptr
 			  int ind_lvl){
   unsigned int block_ptr_lvl1_index;
   unsigned int block_ptr_lvl1;
-  
+  //printf("ind block level: %d\n", ind_lvl); ////// TEST
   // Null pointer check
   if (block_ind_ptr == 0) return;
-
+  
+  //printf("...running scan\n"); ////// TEST
   // Look through each pointer in the indirect block
   for (block_ptr_lvl1_index = 0; block_ptr_lvl1_index < NUM_PTRS; block_ptr_lvl1_index++){
     // Determine the next block pointer
@@ -101,7 +102,7 @@ void directory_ind_block (unsigned int dir_inode_num, unsigned int block_ind_ptr
   }  
 }
 
-void directory_dind_block (unsigned int dir_inode_num, unsigned int block_dind_ptr){
+/*void directory_dind_block (unsigned int dir_inode_num, unsigned int block_dind_ptr){
   unsigned int block_ptr_lvl2_index;
   unsigned int block_ptr_lvl2;
   
@@ -131,7 +132,7 @@ void directory_tind_block (unsigned int dir_inode_num, unsigned int block_tind_p
     // Scan the block
     directory_dind_block(dir_inode_num, block_ptr_lvl3);
   }  
-}
+  }*/
 
 void directory (struct ext2_inode* dir_inode, unsigned int dir_inode_num){
   unsigned int block_index;
@@ -142,14 +143,16 @@ void directory (struct ext2_inode* dir_inode, unsigned int dir_inode_num){
     // Find the next block
     block_ptr = dir_inode->i_block[block_index];
     // Scan the block
+    //printf("...running #%d\n", block_index); ////// TEST
     directory_block(dir_inode_num, block_ptr);
   }
   
   // Loop through all single indirect pointers
-  for (; block_index <= EXT2_DIND_BLOCK; block_index++){
+  for (; block_index < EXT2_DIND_BLOCK; block_index++){
     // Grab the next indirect block
     block_ptr = dir_inode->i_block[block_index];
     // Scan the block
+    //printf("...running single\n"); ////// TEST
     directory_ind_block(dir_inode_num, block_ptr, 1);
   }
 
@@ -158,6 +161,7 @@ void directory (struct ext2_inode* dir_inode, unsigned int dir_inode_num){
     // Grab the next indirect block
     block_ptr = dir_inode->i_block[block_index];
     // Scan the block
+    //printf("...running double\n"); ////// TEST
     //directory_dind_block(dir_inode_num, block_ptr); ////// TEST
     directory_ind_block(dir_inode_num, block_ptr, 2);
   }
@@ -167,6 +171,7 @@ void directory (struct ext2_inode* dir_inode, unsigned int dir_inode_num){
     // Grab the next indirect block
     block_ptr = dir_inode->i_block[block_index];
     // Scan the block
+    //printf("...running triple\n"); ////// TEST
     //directory_tind_block(dir_inode_num, block_ptr); ////// TEST
     directory_ind_block(dir_inode_num, block_ptr, 3);
   }
@@ -241,7 +246,7 @@ void Inode(){
 	
 	if (run_dir) {
 	  // If indicated, run the directory function
-	  //	    directory(&inodes, dir_par_inode_num);
+	  directory(&inodes, dir_par_inode_num);
 	  run_dir = 0;
 	}
       }
@@ -305,7 +310,7 @@ void freeblock(){
 
 void group(){
   number_of_groups = 1 + (sblock.s_blocks_count - 1)/sblock.s_blocks_per_group;
-  printf("number of groups %d\n", number_of_groups);
+  //printf("number of groups %d\n", number_of_groups);
   //(totalnumber of blocks -1)/blocks per group
   //first group is at the offset 1024 + block_size
   //second group is at the offset 1024 + block_size + (block_size * blocks_per_group)
@@ -345,7 +350,14 @@ void superblock(){
   //The superblock is always located at byte offset 1024 from the beginning of the file, block device or partition formatted with Ext2 and later variants (Ext3, Ext4).
   Pread(imagefd, &sblock, sizeof(struct ext2_super_block), 1024);
   block_size = 1024 << sblock.s_log_block_size;
-  printf("SUPERBLOCK,%u,%u,%u,%u,%u,%u,%u\n", sblock.s_blocks_count, sblock.s_inodes_count, block_size, sblock.s_inode_size, sblock.s_blocks_per_group, sblock.s_inodes_per_group, sblock.s_first_ino);  
+  printf("SUPERBLOCK,%u,%u,%u,%u,%u,%u,%u\n", 
+	 sblock.s_blocks_count, 
+	 sblock.s_inodes_count, 
+	 block_size, 
+	 sblock.s_inode_size, 
+	 sblock.s_blocks_per_group, 
+	 sblock.s_inodes_per_group, 
+	 sblock.s_first_ino);  
 }
 
 
