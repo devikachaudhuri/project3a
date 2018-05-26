@@ -241,7 +241,7 @@ void Inode(){
 	
 	if (run_dir) {
 	  // If indicated, run the directory function
-	  //	    directory(&inodes, dir_par_inode_num);
+	  directory(&inodes, dir_par_inode_num);
 	  run_dir = 0;
 	}
       }
