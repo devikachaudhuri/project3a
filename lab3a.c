@@ -81,26 +81,81 @@ void directory_block (unsigned int dir_inode_num, unsigned int block_ptr){
   }
 }
 
-void directory_ind_block (unsigned int dir_inode_num, unsigned int block_ind_ptr,
-			  int ind_lvl){
+void ind_block (unsigned int dir_inode_num, unsigned int block_ind_ptr,
+		int ind_lvl, unsigned int logi_offset, int isDirectory){
+  unsigned int* block;
   unsigned int block_ptr_lvl1_index;
   unsigned int block_ptr_lvl1;
+  unsigned int logi_offset_local;
   //printf("ind block level: %d\n", ind_lvl); ////// TEST
   // Null pointer check
   if (block_ind_ptr == 0) return;
   
-  //printf("...running scan\n"); ////// TEST
+  block = malloc(EXT2_MIN_BLOCK_SIZE);
+  Pread(imagefd, block, EXT2_MIN_BLOCK_SIZE, block_offset(block_ind_ptr));
+
   // Look through each pointer in the indirect block
   for (block_ptr_lvl1_index = 0; block_ptr_lvl1_index < NUM_PTRS; block_ptr_lvl1_index++){
     // Determine the next block pointer
-    block_ptr_lvl1 = block_ind_ptr + (sizeof(__u32) * block_ptr_lvl1_index);
+    //block_ptr_lvl1 = block_ind_ptr + (sizeof(__u32) * block_ptr_lvl1_index);
+    block_ptr_lvl1 = block[block_ptr_lvl1_index];
+
+    // Calculate logical offset
+    logi_offset_local = (logi_offset * 256) + block_ptr_lvl1_index;
+    
     // Scan the block
     if (ind_lvl > 1)
-      directory_ind_block(dir_inode_num, block_ptr_lvl1, ind_lvl - 1);
-    else
-      directory_block(dir_inode_num, block_ptr_lvl1);
-  }  
+      ind_block(dir_inode_num, block_ptr_lvl1, ind_lvl - 1, logi_offset_local, isDirectory);
+    else if (isDirectory)
+      directory_block(dir_inode_num, block_ptr_lvl1); // Only run if for a directory
+    
+    // Print the log entry for an indirect block
+    if (block_ptr_lvl1 != 0) {
+      printf("INDIRECT,%u,%d,%u,%u,%u\n",
+	     dir_inode_num,
+	     ind_lvl,
+	     (logi_offset + EXT2_NDIR_BLOCKS),
+	     block_ind_ptr,
+	     block_ptr_lvl1);
+    }
+  }
+  free(block);
 }
+
+void file_offsets (struct ext2_inode* dir_inode, unsigned int dir_inode_num){
+  unsigned int block_index = EXT2_IND_BLOCK;
+  unsigned int block_ptr;
+  
+  // Loop through all single indirect pointers
+  for (; block_index < EXT2_DIND_BLOCK; block_index++){
+    // Grab the next indirect block
+    block_ptr = dir_inode->i_block[block_index];
+    // Scan the block
+    //printf("...running single\n"); ////// TEST
+    ind_block(dir_inode_num, block_ptr, 1, 0, 0);
+  }
+
+  // Loop through all double indirect pointers
+  for (; block_index < EXT2_TIND_BLOCK; block_index++){
+    // Grab the next indirect block
+    block_ptr = dir_inode->i_block[block_index];
+    // Scan the block
+    //printf("...running double\n"); ////// TEST
+    //directory_dind_block(dir_inode_num, block_ptr); ////// TEST
+    ind_block(dir_inode_num, block_ptr, 2, 0, 0);
+  }
+
+  // Loop through all triple indirect pointers
+  for (; block_index < EXT2_N_BLOCKS; block_index++){
+    // Grab the next indirect block
+    block_ptr = dir_inode->i_block[block_index];
+    // Scan the block
+    //printf("...running triple\n"); ////// TEST
+    //directory_tind_block(dir_inode_num, block_ptr); ////// TEST
+    ind_block(dir_inode_num, block_ptr, 3, 0, 0);
+  }
+}
+
 
 /*void directory_dind_block (unsigned int dir_inode_num, unsigned int block_dind_ptr){
   unsigned int block_ptr_lvl2_index;
@@ -114,7 +169,7 @@ void directory_ind_block (unsigned int dir_inode_num, unsigned int block_ind_ptr
     // Determine the next block pointer
     block_ptr_lvl2 = block_dind_ptr + (sizeof(__u32) * block_ptr_lvl2_index);
     // Scan the block
-    directory_ind_block(dir_inode_num, block_ptr_lvl2, 1);
+    ind_block(dir_inode_num, block_ptr_lvl2, 1);
   }  
 }
 
@@ -153,7 +208,7 @@ void directory (struct ext2_inode* dir_inode, unsigned int dir_inode_num){
     block_ptr = dir_inode->i_block[block_index];
     // Scan the block
     //printf("...running single\n"); ////// TEST
-    directory_ind_block(dir_inode_num, block_ptr, 1);
+    ind_block(dir_inode_num, block_ptr, 1, 0, 1);
   }
 
   // Loop through all double indirect pointers
@@ -163,7 +218,7 @@ void directory (struct ext2_inode* dir_inode, unsigned int dir_inode_num){
     // Scan the block
     //printf("...running double\n"); ////// TEST
     //directory_dind_block(dir_inode_num, block_ptr); ////// TEST
-    directory_ind_block(dir_inode_num, block_ptr, 2);
+    ind_block(dir_inode_num, block_ptr, 2, 0, 1);
   }
 
   // Loop through all triple indirect pointers
@@ -173,7 +228,7 @@ void directory (struct ext2_inode* dir_inode, unsigned int dir_inode_num){
     // Scan the block
     //printf("...running triple\n"); ////// TEST
     //directory_tind_block(dir_inode_num, block_ptr); ////// TEST
-    directory_ind_block(dir_inode_num, block_ptr, 3);
+    ind_block(dir_inode_num, block_ptr, 3, 0, 1);
   }
 }
 
@@ -181,7 +236,8 @@ void Inode(){
   struct ext2_inode inodes;
   char type_of_file = '?';
   int run_dir = 0;
-  unsigned int dir_par_inode_num;
+  int run_file = 0;
+  unsigned int parent_inode_num;
   for (unsigned int j = 0; j < number_of_groups; j++) {
     for (unsigned int k = 2; k < sblock.s_inodes_count; k++) {      
       int block = (gdescriptors[j].bg_inode_table);
@@ -191,8 +247,10 @@ void Inode(){
       if (inodes.i_mode != 0 && inodes.i_links_count != 0){
 	  
 	if (S_ISREG(inodes.i_mode)){
-	    type_of_file = 'f';
-	  }
+	  type_of_file = 'f';
+	  // Run the indirect function for files too
+	  run_file = 1;
+	}
 	if (S_ISLNK(inodes.i_mode)){
 	  type_of_file = 's';
 	}
@@ -217,7 +275,7 @@ void Inode(){
 	struct tm *info2 = gmtime(&rawtime2);
 	strftime(atime, 80, "%x %X", info2);  
 	
-	dir_par_inode_num = k;
+	parent_inode_num = k;
 	printf("INODE,%d,%c,%o,%u,%u,%u,%s,%s,%s,%u,%u",
 	       k,
 	       type_of_file,
@@ -246,8 +304,14 @@ void Inode(){
 	
 	if (run_dir) {
 	  // If indicated, run the directory function
-	  directory(&inodes, dir_par_inode_num);
+	  directory (&inodes, parent_inode_num);
 	  run_dir = 0;
+	}
+	
+	if (run_file) {
+	  // If indicated, run the indirect block search function
+	  file_offsets (&inodes, parent_inode_num);
+	  run_file = 0;
 	}
       }
     }
