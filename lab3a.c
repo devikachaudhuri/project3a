@@ -81,12 +81,13 @@ void directory_block (unsigned int dir_inode_num, unsigned int block_ptr){
   }
 }
 
-void ind_block (unsigned int dir_inode_num, unsigned int block_ind_ptr,
-		int ind_lvl, unsigned int logi_offset, int isDirectory){
+void ind_block (unsigned int dir_inode_num, unsigned int block_ind_ptr, int ind_lvl, 
+		unsigned int offset_3, unsigned int offset_2, int isDirectory){
   unsigned int* block;
   unsigned int block_ptr_lvl1_index;
   unsigned int block_ptr_lvl1;
   unsigned int logi_offset_local;
+  unsigned int offset_1;
   //printf("ind block level: %d\n", ind_lvl); ////// TEST
   // Null pointer check
   if (block_ind_ptr == 0) return;
@@ -101,11 +102,17 @@ void ind_block (unsigned int dir_inode_num, unsigned int block_ind_ptr,
     block_ptr_lvl1 = block[block_ptr_lvl1_index];
 
     // Calculate logical offset
-    logi_offset_local = (logi_offset * 256) + block_ptr_lvl1_index;
+    //logi_offset_local = (logi_offset * 256) + block_ptr_lvl1_index;
+    offset_3 = (ind_lvl == 3) ? (block_ptr_lvl1_index + 1) : offset_3;
+    offset_2 = (ind_lvl == 2) ? (block_ptr_lvl1_index + 1): offset_2;
+    offset_1 = (ind_lvl == 1) ? (block_ptr_lvl1_index) : 0;
+    logi_offset_local = (65536 * offset_3) + (256 * offset_2) + offset_1 + EXT2_NDIR_BLOCKS;
     
+
     // Scan the block
     if (ind_lvl > 1)
-      ind_block(dir_inode_num, block_ptr_lvl1, ind_lvl - 1, logi_offset_local, isDirectory);
+      ind_block(dir_inode_num, block_ptr_lvl1, ind_lvl - 1, 
+		offset_3, offset_2, isDirectory);
     else if (isDirectory)
       directory_block(dir_inode_num, block_ptr_lvl1); // Only run if for a directory
     
@@ -114,7 +121,7 @@ void ind_block (unsigned int dir_inode_num, unsigned int block_ind_ptr,
       printf("INDIRECT,%u,%d,%u,%u,%u\n",
 	     dir_inode_num,
 	     ind_lvl,
-	     (logi_offset + EXT2_NDIR_BLOCKS),
+	     logi_offset_local,
 	     block_ind_ptr,
 	     block_ptr_lvl1);
     }
@@ -132,7 +139,7 @@ void file_offsets (struct ext2_inode* dir_inode, unsigned int dir_inode_num){
     block_ptr = dir_inode->i_block[block_index];
     // Scan the block
     //printf("...running single\n"); ////// TEST
-    ind_block(dir_inode_num, block_ptr, 1, 0, 0);
+    ind_block(dir_inode_num, block_ptr, 1, 0, 0, 0);
   }
 
   // Loop through all double indirect pointers
@@ -142,7 +149,7 @@ void file_offsets (struct ext2_inode* dir_inode, unsigned int dir_inode_num){
     // Scan the block
     //printf("...running double\n"); ////// TEST
     //directory_dind_block(dir_inode_num, block_ptr); ////// TEST
-    ind_block(dir_inode_num, block_ptr, 2, 0, 0);
+    ind_block(dir_inode_num, block_ptr, 2, 0, 1, 0);
   }
 
   // Loop through all triple indirect pointers
@@ -152,7 +159,7 @@ void file_offsets (struct ext2_inode* dir_inode, unsigned int dir_inode_num){
     // Scan the block
     //printf("...running triple\n"); ////// TEST
     //directory_tind_block(dir_inode_num, block_ptr); ////// TEST
-    ind_block(dir_inode_num, block_ptr, 3, 0, 0);
+    ind_block(dir_inode_num, block_ptr, 3, 1, 1, 0);
   }
 }
 
@@ -208,7 +215,7 @@ void directory (struct ext2_inode* dir_inode, unsigned int dir_inode_num){
     block_ptr = dir_inode->i_block[block_index];
     // Scan the block
     //printf("...running single\n"); ////// TEST
-    ind_block(dir_inode_num, block_ptr, 1, 0, 1);
+    ind_block(dir_inode_num, block_ptr, 1, 0, 0, 1);
   }
 
   // Loop through all double indirect pointers
@@ -218,7 +225,7 @@ void directory (struct ext2_inode* dir_inode, unsigned int dir_inode_num){
     // Scan the block
     //printf("...running double\n"); ////// TEST
     //directory_dind_block(dir_inode_num, block_ptr); ////// TEST
-    ind_block(dir_inode_num, block_ptr, 2, 0, 1);
+    ind_block(dir_inode_num, block_ptr, 2, 0, 1, 1);
   }
 
   // Loop through all triple indirect pointers
@@ -228,7 +235,7 @@ void directory (struct ext2_inode* dir_inode, unsigned int dir_inode_num){
     // Scan the block
     //printf("...running triple\n"); ////// TEST
     //directory_tind_block(dir_inode_num, block_ptr); ////// TEST
-    ind_block(dir_inode_num, block_ptr, 3, 0, 1);
+    ind_block(dir_inode_num, block_ptr, 3, 1, 1, 1);
   }
 }
 
