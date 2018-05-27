@@ -2,10 +2,33 @@ NAME: Devika Chaudhuri,Benjamin Domae
 EMAIL: devika.chaudhuri@gmail.com,bw.domae.1910@gmail.com
 ID: 304597339,504599931
 
+Included files:
+- lab3a.c - Main source code file for the project. This file includes the main function as
+  	    well as several helper functions to generate the required logging outputs.
+	    Major functions include:
+	    - superblock() - finds and parses the superblock structure
+	    - group() - Produces the group summary
+	    - freeblock() - Outputs the free block entry log
+	    - freeInode() - Outputs the free I-node entry log
+	    - ind_block() - Recursive function used to scan indirect blocks in the
+	      		    directory() and file_offsets() functions
+	    - file_offsets() - Scans files for data blocks and prompts recursive indirect
+	      		       block searches/outputs
+	    - directory() - Scans for directory entries through all possible blocks
+	    - directory_block() - Outputs a directory log for the block provided
+	    - Inode() - Produces the I-node summary and calls functions to generate the
+	      	      	indirect block and directory logs
+- ext2_fs.h - Provided header file with definitions for the basic Ext2 file system used
+  	      for this project. This file is required to compile lab3a.c.
+- Makefile - Makefile for this project with the required make options.
 
-I used this website to figure out how to look at bits https://stackoverflow.com/questions/2249731/how-do-i-get-bit-by-bit-data-from-an-integer-value-in-c
-
-I used this website to figure out how to determin whether files were symbolic links, regular files, or directories: http://www.delorie.com/gnu/docs/glibc/libc_286.html
-
-I used this link to find out how to test for symlinks and files: http://cs.smith.edu/~nhowe/262/oldlabs/ext2.html
+Extra research:
+In addition to the provided resources on the Ext2 file system, we used a few additional
+   webpages.
+We used this website to figure out how to look at bits:
+   https://stackoverflow.com/questions/2249731/how-do-i-get-bit-by-bit-data-from-an-integer-value-in-c
+We used this website to figure out how to determine whether files were symbolic links, 
+   regular files, or directories: http://www.delorie.com/gnu/docs/glibc/libc_286.html
+We used this link to find out how to test for symlinks and files: 
+   http://cs.smith.edu/~nhowe/262/oldlabs/ext2.html
 
