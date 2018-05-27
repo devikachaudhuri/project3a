@@ -197,43 +197,51 @@ void Inode(){
   int run_dir = 0;
   int run_file = 0;
   unsigned int parent_inode_num;
-  for (unsigned int j = 0; j < number_of_groups; j++) {
-    for (unsigned int k = 2; k < sblock.s_inodes_count; k++) {      
+  for (unsigned int j = 0; j < number_of_groups; j++) { // Loop through each group
+    for (unsigned int k = EXT2_ROOT_INO; k < sblock.s_inodes_count; k++) { // Loop through all inodes
+      // Grab the block offset for the inode table
       int block = (gdescriptors[j].bg_inode_table);
-      int offset = block_offset(block) + (k-1) * sizeof(struct ext2_inode);//add inode table offset to inode offset
-      //      printf("%d\n", offset);
+      // Add inode table offset to inode offset
+      int offset = block_offset(block) + (k-1) * sizeof(struct ext2_inode);
+      // Grab the inode structure
       Pread(imagefd, &inodes, sizeof(struct ext2_inode), offset);
+
+      // Valid inodes have a non-zero mode and non-zero link count
       if (inodes.i_mode != 0 && inodes.i_links_count != 0){
-	  
-	if (S_ISREG(inodes.i_mode)){
+	// Check for file type referenced
+	if (S_ISREG(inodes.i_mode)){ // Regular file
 	  type_of_file = 'f';
 	  // Run the indirect function for files too
 	  run_file = 1;
 	}
-	if (S_ISLNK(inodes.i_mode)){
+	if (S_ISLNK(inodes.i_mode)){ // Symbolic link
 	  type_of_file = 's';
 	}
-	else if (S_ISDIR(inodes.i_mode)){
+	else if (S_ISDIR(inodes.i_mode)){ // Directory
 	  type_of_file = 'd';
 	  // Run the directory function too
 	  run_dir = 1;
 	}
 	
+	// Pull the creation time
 	char ctime[80];
 	time_t rawtime = inodes.i_ctime;
 	struct tm *info = gmtime(&rawtime);
 	strftime(ctime, 80, "%x %X", info);
 	  
+	// Pull the last modification time
 	char mtime[80];
 	time_t rawtime1 = inodes.i_mtime;
 	struct tm *info1 = gmtime(&rawtime1);
 	strftime(mtime, 80, "%x %X", info1);
 	
+	// Pull the last access time
 	char atime[80];
 	time_t rawtime2 = inodes.i_atime;
 	struct tm *info2 = gmtime(&rawtime2);
 	strftime(atime, 80, "%x %X", info2);  
 	
+	// Print the inode log entry
 	parent_inode_num = k;
 	printf("INODE,%d,%c,%o,%u,%u,%u,%s,%s,%s,%u,%u",
 	       k,
@@ -247,6 +255,8 @@ void Inode(){
 	       atime, 
 	       inodes.i_size,
 	       inodes.i_blocks);
+	// Print all 15 block addresses referenced if a regular file, directory, or
+	// symbolic link with file size larger than 60 bytes
 	if (type_of_file != 's' || (type_of_file == 's' && inodes.i_size > 60)){
 	  for (int k = 0; k < EXT2_N_BLOCKS; k++){
 	    printf(",%u", inodes.i_block[k]);
@@ -257,6 +267,7 @@ void Inode(){
 	}
 	printf("\n");
 	
+	// Move to the first non-reserved inode if the first inode
 	if (k == 2) {
 	  k = sblock.s_first_ino - 1;
 	}
@@ -285,9 +296,9 @@ void freeInode(){
   
   unsigned char b;
   Inode_bitmap = malloc(number_of_groups * block_size * sizeof(unsigned char));//for Inodes();
-  for(unsigned int i = 0; i < number_of_groups; i++){
-    int offset2 = (i * sblock.s_inodes_per_group);
-    for (unsigned int k = 0; k < block_size; k ++){
+  for(unsigned int i = 0; i < number_of_groups; i++){ // Loop through each group
+    int offset2 = (i * sblock.s_inodes_per_group);    // Find the offset of this group
+    for (unsigned int k = 0; k < block_size; k ++){   // Loop through each bit in the bitmap
       //parse the bitmap byte by byte
       int offset = (block_size * (gdescriptors[i].bg_block_bitmap +1)) + k;
       Pread(imagefd, &b, sizeof(unsigned char), offset);
@@ -315,9 +326,9 @@ void freeblock(){
   //that the maximum size of a block group is 8 times the size of a block. 
   unsigned char b;
   
-  for(unsigned int i = 0; i < number_of_groups; i++){
-    int offset2 = i * sblock.s_blocks_per_group;
-    for (unsigned int k = 0; k < block_size; k ++){
+  for(unsigned int i = 0; i < number_of_groups; i++){ // Loop through each group
+    int offset2 = i * sblock.s_blocks_per_group;      // Offset for the block
+    for (unsigned int k = 0; k < block_size; k ++){   // Loop through each bit of the bitmap
       //parse the bitmap byte by byte
       int offset = (block_size * gdescriptors[i].bg_block_bitmap) + k;
       Pread(imagefd, &b, sizeof(unsigned char), offset);
@@ -333,19 +344,19 @@ void freeblock(){
 
 void group(){
   number_of_groups = 1 + (sblock.s_blocks_count - 1)/sblock.s_blocks_per_group;
-  //printf("number of groups %d\n", number_of_groups);
   //(totalnumber of blocks -1)/blocks per group
   //first group is at the offset 1024 + block_size
   //second group is at the offset 1024 + block_size + (block_size * blocks_per_group)
   //third group is at the offset 1024 + block_size+ 2(block_size * blockes_per_group)
   gdescriptors = (struct ext2_group_desc*) malloc(number_of_groups * sizeof(struct ext2_group_desc));
 
-
   unsigned int total_left = sblock.s_blocks_count;
   unsigned int blocks_per_group = sblock.s_blocks_per_group;
   unsigned int total_blocks;
-  for (unsigned int i = 0; i< number_of_groups; i++){
+  for (unsigned int i = 0; i< number_of_groups; i++){ // Loop through each group
+    // Get the offset of this group
     int offset = 1024 + block_size + (block_size * i * sblock.s_blocks_per_group);
+    // Grab the group descriptor
     Pread(imagefd, &gdescriptors[0], sizeof(struct ext2_group_desc), offset);
     if (total_left < blocks_per_group){
       total_blocks = total_left;
